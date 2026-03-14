@@ -9,11 +9,38 @@ from frappe.utils import today
 # ─────────────────────────────────────────────────────────────
 
 def generate_qr_codes_for_batch(doc, method=None):
-    """Fires on Batch.after_insert — only runs if batch_qty is already set."""
+    """
+    Fires on Batch.after_insert.
+    Gets qty from batch_qty or falls back to the linked Work Order.
+    """
     try:
         qty = int(doc.batch_qty or 0)
     except (ValueError, TypeError):
         qty = 0
+
+    # If batch_qty is empty, try to get qty from the linked Work Order
+    if qty <= 0:
+        wo_name = doc.get("work_order") or None
+
+        if not wo_name and doc.get("reference_doctype") == "Work Order":
+            wo_name = doc.get("reference_name")
+
+        if not wo_name:
+            # Find the most recently submitted Work Order for this item
+            wo_name = frappe.db.get_value(
+                "Work Order",
+                {
+                    "production_item": doc.item,
+                    "docstatus": 1,
+                },
+                "name",
+                order_by="modified desc"
+            )
+
+        if wo_name:
+            qty = int(
+                frappe.db.get_value("Work Order", wo_name, "qty_to_manufacture") or 0
+            )
 
     if qty <= 0:
         return
@@ -25,7 +52,10 @@ def generate_qr_codes_for_batch(doc, method=None):
 
 
 def on_batch_update(doc, method=None):
-    """Fires on Batch.on_update — generates if qty set after insert."""
+    """
+    Fires on Batch.on_update.
+    Generates QR codes if qty is now set and none exist yet.
+    """
     if doc.get("qr_codes"):
         return
 
@@ -40,28 +70,10 @@ def on_batch_update(doc, method=None):
 
 def generate_qr_from_work_order(doc, method=None):
     """
-    Fires on Work Order.on_submit.
-    Reads qty_to_manufacture and the batch linked to the
-    finished goods item, then generates QR codes for that batch.
+    Fires on Work Order.after_submit.
+    Finds the batch linked to this Work Order's finished goods item
+    and generates QR codes based on qty_to_manufacture.
     """
-    # Work Order must have a batch set on the finished item
-    batch_no = doc.batch_no  # this is the FG batch on the Work Order
-
-    if not batch_no:
-        # Try to find batch from work order item rows if not on header
-        for item in doc.get("required_items", []):
-            if item.get("batch_no"):
-                batch_no = item.batch_no
-                break
-
-    if not batch_no:
-        frappe.msgprint(
-            "⚠ No Batch No found on this Work Order. QR codes were not generated.",
-            alert=True,
-            indicator="orange"
-        )
-        return
-
     qty = int(doc.qty_to_manufacture or 0)
 
     if qty <= 0:
@@ -72,21 +84,69 @@ def generate_qr_from_work_order(doc, method=None):
         )
         return
 
-    # Check if QR codes already exist for this batch
+    # ── Try 1: custom_work_order_batch field on the Work Order header ──
+    batch_no = doc.get("custom_work_order_batch") or None
+
+    # ── Try 2: Look up batch linked to this Work Order by work_order field ──
+    if not batch_no:
+        batch_no = frappe.db.get_value(
+            "Batch",
+            {
+                "item": doc.production_item,
+                "work_order": doc.name,
+            },
+            "name"
+        )
+
+    # ── Try 3: Look up by reference_doctype / reference_name ──────────
+    if not batch_no:
+        batch_no = frappe.db.get_value(
+            "Batch",
+            {
+                "item": doc.production_item,
+                "reference_doctype": "Work Order",
+                "reference_name": doc.name,
+            },
+            "name"
+        )
+
+    # ── Try 4: Most recent batch for this production item ─────────────
+    if not batch_no:
+        batch_no = frappe.db.get_value(
+            "Batch",
+            {
+                "item": doc.production_item,
+                "disabled": 0,
+            },
+            "name",
+            order_by="creation desc"
+        )
+
+    if not batch_no:
+        frappe.msgprint(
+            f"⚠ No Batch found for item <b>{doc.production_item}</b> "
+            f"on Work Order <b>{doc.name}</b>. QR codes were not generated.<br><br>"
+            f"You can manually generate them from the Batch form using "
+            f"<b>Actions → Regenerate QR Codes</b>.",
+            title="QR Generation Skipped",
+            indicator="orange"
+        )
+        return
+
+    # ── Check if QR codes already exist ───────────────────────────────
     batch = frappe.get_doc("Batch", batch_no)
+
     if batch.get("qr_codes"):
         frappe.msgprint(
-            f"ℹ QR codes already exist for Batch {batch_no}.",
+            f"ℹ QR codes already exist for Batch <b>{batch_no}</b>.",
             alert=True,
             indicator="blue"
         )
         return
 
-    # Set batch_qty from Work Order qty if not already set
+    # ── Set batch_qty from Work Order qty if not already set ──────────
     if not batch.batch_qty:
-        batch.batch_qty = qty
-        batch.save(ignore_permissions=True)
-        frappe.db.commit()
+        frappe.db.set_value("Batch", batch_no, "batch_qty", qty)
         batch.reload()
 
     _create_qr_codes(batch, qty)
@@ -150,7 +210,9 @@ def _create_qr_codes(doc, qty):
             )
         except Exception:
             try:
-                font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 16)
+                font = ImageFont.truetype(
+                    "/System/Library/Fonts/Helvetica.ttc", 16
+                )
             except Exception:
                 font = ImageFont.load_default()
 
@@ -255,7 +317,7 @@ def mark_as_printed(batch_no):
 def regenerate_qr_codes(batch_no):
     batch = frappe.get_doc("Batch", batch_no)
 
-    # Delete old File attachments
+    # ── Delete old File attachments ───────────────────────────
     old_files = frappe.get_all(
         "File",
         filters={
@@ -268,14 +330,43 @@ def regenerate_qr_codes(batch_no):
     for f in old_files:
         frappe.delete_doc("File", f, ignore_permissions=True)
 
-    # Clear child table
+    # ── Clear child table ─────────────────────────────────────
     batch.set("qr_codes", [])
     batch.save(ignore_permissions=True)
 
-    # Re-generate
+    # ── Get qty — from batch_qty or linked Work Order ─────────
     qty = int(batch.batch_qty or 0)
-    if qty > 0:
-        _create_qr_codes(batch, qty)
+
+    if qty <= 0:
+        # Try to find qty from linked Work Order
+        wo_name = batch.get("work_order") or None
+
+        if not wo_name and batch.get("reference_doctype") == "Work Order":
+            wo_name = batch.get("reference_name")
+
+        if not wo_name:
+            wo_name = frappe.db.get_value(
+                "Work Order",
+                {
+                    "production_item": batch.item,
+                    "docstatus": 1,
+                },
+                "name",
+                order_by="modified desc"
+            )
+
+        if wo_name:
+            qty = int(
+                frappe.db.get_value("Work Order", wo_name, "qty_to_manufacture") or 0
+            )
+
+    if qty <= 0:
+        frappe.throw(
+            "Could not determine qty for QR generation. "
+            "Please set Batch Qty on the Batch and try again."
+        )
+
+    _create_qr_codes(batch, qty)
 
     return {"status": "ok", "generated": qty}
 

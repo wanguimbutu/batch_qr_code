@@ -12,7 +12,7 @@ doc_events = {
         "on_update":    "batch_qr_code.utils.qr_generator.on_batch_update",
     },
     "Work Order": {
-        "on_submit": "batch_qr_code.utils.qr_generator.generate_qr_from_work_order",
+        "after_submit": "batch_qr_code.utils.qr_generator.generate_qr_from_work_order",
     }
 }
 
