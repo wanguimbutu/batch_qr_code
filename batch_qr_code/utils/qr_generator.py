@@ -1,5 +1,7 @@
 import io
 import base64
+import uuid
+import hashlib
 import frappe
 from frappe.utils import today
 
@@ -8,20 +10,26 @@ _SKIP_UPDATE_HOOK = {}
 
 
 # ─────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────
+
+def _generate_unique_id(batch_no, unit):
+    """Generate a short unpredictable unique ID per unit."""
+    raw = f"{batch_no}-{unit}-{uuid.uuid4()}"
+    hashed = hashlib.sha256(raw.encode()).hexdigest()[:10].upper()
+    return f"{hashed}"
+
+
+# ─────────────────────────────────────────────────────────────
 # HOOKS
 # ─────────────────────────────────────────────────────────────
 
 def generate_qr_codes_for_batch(doc, method=None):
-    """
-    Fires on Batch.after_insert.
-    Gets qty from batch_qty or falls back to the linked Work Order.
-    """
     try:
         qty = int(doc.batch_qty or 0)
     except (ValueError, TypeError):
         qty = 0
 
-    # If batch_qty is empty try to get qty from the linked Work Order
     if qty <= 0:
         wo_name = None
 
@@ -31,18 +39,13 @@ def generate_qr_codes_for_batch(doc, method=None):
         if not wo_name:
             wo_name = frappe.db.get_value(
                 "Work Order",
-                {
-                    "production_item": doc.item,
-                    "docstatus": 1,
-                },
+                {"production_item": doc.item, "docstatus": 1},
                 "name",
                 order_by="modified desc"
             )
 
         if wo_name:
-            qty = int(
-                frappe.db.get_value("Work Order", wo_name, "qty") or 0
-            )
+            qty = int(frappe.db.get_value("Work Order", wo_name, "qty") or 0)
 
     if qty <= 0:
         return
@@ -54,12 +57,6 @@ def generate_qr_codes_for_batch(doc, method=None):
 
 
 def on_batch_update(doc, method=None):
-    """
-    Fires on Batch.on_update.
-    Skip if we are inside a regeneration call.
-    Generates QR codes if qty is set and none exist yet.
-    """
-    # Skip if regeneration is in progress for this batch
     if _SKIP_UPDATE_HOOK.get(doc.name):
         return
 
@@ -76,11 +73,6 @@ def on_batch_update(doc, method=None):
 
 
 def generate_qr_from_work_order(doc, method=None):
-    """
-    Fires on Work Order.after_submit.
-    Finds the batch linked to this Work Order and generates QR codes.
-    Note: Work Order uses `qty` not `qty_to_manufacture`.
-    """
     qty = int(doc.qty or 0)
 
     if qty <= 0:
@@ -91,7 +83,6 @@ def generate_qr_from_work_order(doc, method=None):
         )
         return
 
-    # ── Try 1: Look up batch by reference_doctype / reference_name ────
     batch_no = frappe.db.get_value(
         "Batch",
         {
@@ -102,18 +93,13 @@ def generate_qr_from_work_order(doc, method=None):
         "name"
     )
 
-    # ── Try 2: custom_work_order_batch field on Work Order ────────────
     if not batch_no:
         batch_no = doc.get("custom_work_order_batch") or None
 
-    # ── Try 3: Most recent batch for this production item ─────────────
     if not batch_no:
         batch_no = frappe.db.get_value(
             "Batch",
-            {
-                "item": doc.production_item,
-                "disabled": 0,
-            },
+            {"item": doc.production_item, "disabled": 0},
             "name",
             order_by="creation desc"
         )
@@ -138,12 +124,10 @@ def generate_qr_from_work_order(doc, method=None):
         )
         return
 
-    # Set batch_qty from Work Order qty if not already set
     if not batch.batch_qty:
         frappe.db.set_value("Batch", batch_no, "batch_qty", qty)
         batch.reload()
     else:
-        # Use the batch_qty that's already set (it was set from the WO)
         qty = int(batch.batch_qty)
 
     _create_qr_codes(batch, qty)
@@ -167,7 +151,9 @@ def _create_qr_codes(doc, qty):
     rows = []
 
     for unit in range(1, qty + 1):
-        qr_id = f"{batch_no}-{unit:04d}"
+
+        # ── Unique unpredictable ID ───────────────────────────
+        qr_id = _generate_unique_id(batch_no, unit)
 
         # ── Payload (what scanner reads) ──────────────────────
         payload = (
@@ -192,38 +178,52 @@ def _create_qr_codes(doc, qty):
         qr.make(fit=True)
         qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
-        # ── Add item name text below the QR image ─────────────
+        # ── Add item name + unit number below the QR image ────
         qr_width, qr_height = qr_img.size
-        label_height = 40
+        label_height = 52  # slightly taller to fit two lines
         final_img = Image.new("RGB", (qr_width, qr_height + label_height), "white")
         final_img.paste(qr_img, (0, 0))
 
         draw = ImageDraw.Draw(final_img)
 
-        # Load font — tries Linux, then macOS, then falls back to default
+        # Load fonts
         try:
-            font = ImageFont.truetype(
+            font_name = ImageFont.truetype(
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16
+            )
+            font_unit = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13
             )
         except Exception:
             try:
-                font = ImageFont.truetype(
+                font_name = ImageFont.truetype(
                     "/System/Library/Fonts/Helvetica.ttc", 16
                 )
+                font_unit = ImageFont.truetype(
+                    "/System/Library/Fonts/Helvetica.ttc", 13
+                )
             except Exception:
-                font = ImageFont.load_default()
+                font_name = ImageFont.load_default()
+                font_unit = ImageFont.load_default()
 
-        # Truncate if too long
+        # ── Line 1: Item name (bold, centered) ───────────────
         display_name = item_name if len(item_name) <= 35 else item_name[:32] + "..."
+        bbox_name = draw.textbbox((0, 0), display_name, font=font_name)
+        name_w = bbox_name[2] - bbox_name[0]
+        name_h = bbox_name[3] - bbox_name[1]
+        name_x = max((qr_width - name_w) // 2, 4)
+        name_y = qr_height + 6
 
-        # Centre the text in the white strip
-        bbox = draw.textbbox((0, 0), display_name, font=font)
-        text_width  = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        text_x = max((qr_width - text_width) // 2, 4)
-        text_y = qr_height + (label_height - text_height) // 2
+        draw.text((name_x, name_y), display_name, fill="black", font=font_name)
 
-        draw.text((text_x, text_y), display_name, fill="black", font=font)
+        # ── Line 2: Unit number (lighter, centered) ───────────
+        unit_text = f"Unit {unit} of {qty}"
+        bbox_unit = draw.textbbox((0, 0), unit_text, font=font_unit)
+        unit_w = bbox_unit[2] - bbox_unit[0]
+        unit_x = max((qr_width - unit_w) // 2, 4)
+        unit_y = name_y + name_h + 4
+
+        draw.text((unit_x, unit_y), unit_text, fill="#555555", font=font_unit)
 
         # ── Save final image to bytes ─────────────────────────
         buf = io.BytesIO()
@@ -232,7 +232,7 @@ def _create_qr_codes(doc, qty):
         img_bytes = buf.read()
 
         # ── Save as File attachment ───────────────────────────
-        file_name = f"QR_{batch_no}_{unit:04d}.png"
+        file_name = f"QR_{batch_no}_{qr_id}.png"
         file_doc = frappe.get_doc({
             "doctype":             "File",
             "file_name":           file_name,
@@ -312,7 +312,6 @@ def mark_as_printed(batch_no):
 
 @frappe.whitelist()
 def regenerate_qr_codes(batch_no):
-    # Set flag to block on_batch_update from firing
     _SKIP_UPDATE_HOOK[batch_no] = True
 
     try:
@@ -337,7 +336,7 @@ def regenerate_qr_codes(batch_no):
         batch.save(ignore_permissions=True)
         frappe.db.commit()
 
-        # ── Get qty — from batch_qty or linked Work Order ─────
+        # ── Get qty ───────────────────────────────────────────
         qty = int(batch.batch_qty or 0)
 
         if qty <= 0:
@@ -362,12 +361,10 @@ def regenerate_qr_codes(batch_no):
                 "Could not determine qty. Please set Batch Qty on the Batch and try again."
             )
 
-        # Reload batch after save to get clean state
         batch.reload()
         _create_qr_codes(batch, qty)
 
     finally:
-        # Always clear the flag
         _SKIP_UPDATE_HOOK.pop(batch_no, None)
 
     return {"status": "ok", "generated": qty}
