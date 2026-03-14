@@ -5,6 +5,27 @@ app_description = "qr code generation for batches"
 app_email = "info@soriasystems.co.ke"
 app_license = "mit"
 
+# ── DocType Events ────────────────────────────────────────────
+doc_events = {
+    "Batch": {
+        "after_insert": "batch_qr_code.utils.qr_generator.generate_qr_codes_for_batch",
+        "on_update":    "batch_qr_code.utils.qr_generator.on_batch_update",
+    }
+}
+
+# ── JS includes ───────────────────────────────────────────────
+doctype_js = {
+    "Stock Entry": "public/js/stock_entry_qr.js",
+    "Batch":       "public/js/batch_qr.js",
+}
+
+# ── Jinja helpers for Print Formats ──────────────────────────
+jinja = {
+    "methods": [
+        "batch_qr_code.utils.qr_generator.get_qr_codes_for_batch",
+        "batch_qr_code.utils.qr_generator.get_qr_image_base64",
+    ]
+}
 # Apps
 # ------------------
 

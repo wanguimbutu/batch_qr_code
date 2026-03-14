@@ -1,0 +1,101 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-14 12:40:49.480731",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "qr_code_id",
+  "batch_no",
+  "item_code",
+  "item_name",
+  "production_date",
+  "unit_number",
+  "total_qty",
+  "is_printed",
+  "column_break_fxee",
+  "qr_image",
+  "qr_payload"
+ ],
+ "fields": [
+  {
+   "fieldname": "qr_code_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Qr Code Id"
+  },
+  {
+   "fieldname": "batch_no",
+   "fieldtype": "Link",
+   "label": "Batch No",
+   "options": "Batch"
+  },
+  {
+   "fieldname": "item_code",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Code",
+   "options": "Item"
+  },
+  {
+   "fieldname": "item_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Item Name"
+  },
+  {
+   "fieldname": "production_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Production Date"
+  },
+  {
+   "fieldname": "unit_number",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Unit#"
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Int",
+   "label": "Total Qty#"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_printed",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Printed?"
+  },
+  {
+   "fieldname": "column_break_fxee",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "qr_image",
+   "fieldtype": "Attach",
+   "label": "Qr Image"
+  },
+  {
+   "fieldname": "qr_payload",
+   "fieldtype": "Small Text",
+   "label": "Qr Payload(Raw)"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-03-14 12:49:57.022215",
+ "modified_by": "Administrator",
+ "module": "Batch qr code",
+ "name": "Batch Qr Code",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
