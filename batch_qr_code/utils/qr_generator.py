@@ -5,7 +5,6 @@ import hashlib
 import frappe
 from frappe.utils import today
 
-# Flag to prevent on_batch_update from firing during regeneration
 _SKIP_UPDATE_HOOK = {}
 
 
@@ -17,7 +16,12 @@ def _generate_unique_id(batch_no, unit):
     """Generate a short unpredictable unique ID per unit."""
     raw = f"{batch_no}-{unit}-{uuid.uuid4()}"
     hashed = hashlib.sha256(raw.encode()).hexdigest()[:10].upper()
-    return f"{hashed}"
+    return hashed
+
+
+def _should_use_background(qty):
+    """Use background job for anything over 20 units."""
+    return qty > 20
 
 
 # ─────────────────────────────────────────────────────────────
@@ -53,7 +57,22 @@ def generate_qr_codes_for_batch(doc, method=None):
     if doc.get("qr_codes"):
         return
 
-    _create_qr_codes(doc, qty)
+    if _should_use_background(qty):
+        frappe.enqueue(
+            "batch_qr_code.utils.qr_generator._create_qr_codes_background",
+            queue="long",
+            timeout=3600,
+            batch_no=doc.name,
+            qty=qty,
+        )
+        frappe.msgprint(
+            f"⏳ Generating {qty} QR codes in the background for Batch <b>{doc.name}</b>. "
+            f"Refresh the Batch form to see them when done.",
+            alert=True,
+            indicator="blue",
+        )
+    else:
+        _create_qr_codes(doc, qty)
 
 
 def on_batch_update(doc, method=None):
@@ -69,7 +88,22 @@ def on_batch_update(doc, method=None):
         qty = 0
 
     if qty > 0:
-        _create_qr_codes(doc, qty)
+        if _should_use_background(qty):
+            frappe.enqueue(
+                "batch_qr_code.utils.qr_generator._create_qr_codes_background",
+                queue="long",
+                timeout=3600,
+                batch_no=doc.name,
+                qty=qty,
+            )
+            frappe.msgprint(
+                f"⏳ Generating {qty} QR codes in the background for Batch <b>{doc.name}</b>. "
+                f"Refresh to see them when done.",
+                alert=True,
+                indicator="blue",
+            )
+        else:
+            _create_qr_codes(doc, qty)
 
 
 def generate_qr_from_work_order(doc, method=None):
@@ -130,7 +164,52 @@ def generate_qr_from_work_order(doc, method=None):
     else:
         qty = int(batch.batch_qty)
 
-    _create_qr_codes(batch, qty)
+    if _should_use_background(qty):
+        frappe.enqueue(
+            "batch_qr_code.utils.qr_generator._create_qr_codes_background",
+            queue="long",
+            timeout=3600,
+            batch_no=batch_no,
+            qty=qty,
+        )
+        frappe.msgprint(
+            f"⏳ Generating {qty} QR codes in the background for Batch <b>{batch_no}</b>. "
+            f"Refresh the Batch form to see them when done.",
+            alert=True,
+            indicator="blue",
+        )
+    else:
+        _create_qr_codes(batch, qty)
+
+
+# ─────────────────────────────────────────────────────────────
+# BACKGROUND WRAPPER
+# ─────────────────────────────────────────────────────────────
+
+def _create_qr_codes_background(batch_no, qty):
+    """Called by the background job queue for large quantities."""
+    try:
+        batch = frappe.get_doc("Batch", batch_no)
+
+        if batch.get("qr_codes"):
+            return
+
+        _create_qr_codes(batch, qty)
+
+        frappe.publish_realtime(
+            "msgprint",
+            {
+                "message": f"✅ {qty} QR codes generated for Batch {batch_no}. "
+                           f"Please refresh the Batch form to view them.",
+            },
+            user=frappe.session.user if frappe.session else "Administrator",
+        )
+
+    except Exception:
+        frappe.log_error(
+            title=f"QR Generation Failed for Batch {batch_no}",
+            message=frappe.get_traceback()
+        )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -180,7 +259,7 @@ def _create_qr_codes(doc, qty):
 
         # ── Add item name + unit number below the QR image ────
         qr_width, qr_height = qr_img.size
-        label_height = 52  # slightly taller to fit two lines
+        label_height = 52
         final_img = Image.new("RGB", (qr_width, qr_height + label_height), "white")
         final_img.paste(qr_img, (0, 0))
 
@@ -206,7 +285,7 @@ def _create_qr_codes(doc, qty):
                 font_name = ImageFont.load_default()
                 font_unit = ImageFont.load_default()
 
-        # ── Line 1: Item name (bold, centered) ───────────────
+        # ── Line 1: Item name (bold, centered) ────────────────
         display_name = item_name if len(item_name) <= 35 else item_name[:32] + "..."
         bbox_name = draw.textbbox((0, 0), display_name, font=font_name)
         name_w = bbox_name[2] - bbox_name[0]
@@ -216,7 +295,7 @@ def _create_qr_codes(doc, qty):
 
         draw.text((name_x, name_y), display_name, fill="black", font=font_name)
 
-        # ── Line 2: Unit number (lighter, centered) ───────────
+        # ── Line 2: Unit number (lighter, centered) ────────────
         unit_text = f"Unit {unit} of {qty}"
         bbox_unit = draw.textbbox((0, 0), unit_text, font=font_unit)
         unit_w = bbox_unit[2] - bbox_unit[0]
@@ -257,12 +336,23 @@ def _create_qr_codes(doc, qty):
             "is_printed":      0,
         })
 
-    for row in rows:
-        doc.append("qr_codes", row)
+        # ── Commit every 50 rows to avoid memory buildup ──────
+        if unit % 50 == 0:
+            for row in rows:
+                doc.append("qr_codes", row)
+            rows = []
+            doc.flags.ignore_validate_update_after_submit = True
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+            doc.reload()
 
-    doc.flags.ignore_validate_update_after_submit = True
-    doc.save(ignore_permissions=True)
-    frappe.db.commit()
+    # ── Save any remaining rows ───────────────────────────────
+    if rows:
+        for row in rows:
+            doc.append("qr_codes", row)
+        doc.flags.ignore_validate_update_after_submit = True
+        doc.save(ignore_permissions=True)
+        frappe.db.commit()
 
     frappe.msgprint(
         f"✅ {qty} QR code(s) generated for Batch <b>{batch_no}</b>.",
@@ -298,6 +388,39 @@ def get_qr_codes_for_batch(batch_no):
         })
 
     return result
+
+
+@frappe.whitelist()
+def get_batch_for_work_order(wo_name, production_item):
+    """Find the batch linked to a Work Order — used by the Work Order JS button."""
+
+    # Try 1: reference_doctype / reference_name on Batch
+    batch_no = frappe.db.get_value(
+        "Batch",
+        {
+            "item": production_item,
+            "reference_doctype": "Work Order",
+            "reference_name": wo_name,
+        },
+        "name"
+    )
+
+    # Try 2: custom_work_order_batch on the Work Order
+    if not batch_no:
+        batch_no = frappe.db.get_value(
+            "Work Order", wo_name, "custom_work_order_batch"
+        )
+
+    # Try 3: most recent batch for this item
+    if not batch_no:
+        batch_no = frappe.db.get_value(
+            "Batch",
+            {"item": production_item, "disabled": 0},
+            "name",
+            order_by="creation desc"
+        )
+
+    return batch_no or None
 
 
 @frappe.whitelist()
@@ -358,11 +481,27 @@ def regenerate_qr_codes(batch_no):
 
         if qty <= 0:
             frappe.throw(
-                "Could not determine qty. Please set Batch Qty on the Batch and try again."
+                "Could not determine qty. "
+                "Please set Batch Qty on the Batch and try again."
             )
 
         batch.reload()
-        _create_qr_codes(batch, qty)
+
+        if _should_use_background(qty):
+            frappe.enqueue(
+                "batch_qr_code.utils.qr_generator._create_qr_codes_background",
+                queue="long",
+                timeout=3600,
+                batch_no=batch_no,
+                qty=qty,
+            )
+            return {
+                "status":    "queued",
+                "generated": qty,
+                "message":   f"Generating {qty} QR codes in background. Refresh when done."
+            }
+        else:
+            _create_qr_codes(batch, qty)
 
     finally:
         _SKIP_UPDATE_HOOK.pop(batch_no, None)

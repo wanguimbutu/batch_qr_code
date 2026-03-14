@@ -20,6 +20,7 @@ doc_events = {
 doctype_js = {
     "Stock Entry": "public/js/stock_entry_qr.js",
     "Batch":       "public/js/batch_qr.js",
+    "Work Order":  "public/js/work_order_qr.js",
 }
 
 # ── Jinja helpers for Print Formats ──────────────────────────

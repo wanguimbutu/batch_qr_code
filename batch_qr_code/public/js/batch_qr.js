@@ -92,38 +92,14 @@ function print_qr_codes(frm) {
 function open_print_window(qr_codes, company, batch_no) {
 
     const labels_html = qr_codes.map(qr => `
-        <div class="qr-label">
-            <div class="label-company">${escHtml(company)}</div>
-            <img
-                src="${qr.qr_image}"
-                alt="${escHtml(qr.qr_code_id)}"
-                onerror="this.style.display='none'"
-            />
-            <div class="label-body">
-                <div class="label-row">
-                    <span class="lbl">Item</span>
-                    <span class="val">${escHtml(qr.item_code)}</span>
-                </div>
-                <div class="label-row">
-                    <span class="lbl">Name</span>
-                    <span class="val">${escHtml(qr.item_name)}</span>
-                </div>
-                <div class="label-row">
-                    <span class="lbl">Batch</span>
-                    <span class="val">${escHtml(qr.batch_no)}</span>
-                </div>
-                <div class="label-row">
-                    <span class="lbl">Date</span>
-                    <span class="val">${escHtml(qr.production_date)}</span>
-                </div>
-                <div class="label-row">
-                    <span class="lbl">Unit</span>
-                    <span class="val">${qr.unit_number} / ${qr.total_qty}</span>
-                </div>
-            </div>
-            <div class="label-id">${escHtml(qr.qr_code_id)}</div>
-        </div>
-    `).join('');
+    <div class="qr-label">
+        <img
+            src="${qr.qr_image}"
+            alt="${escHtml(qr.qr_code_id)}"
+            onerror="this.style.display='none'"
+        />
+    </div>
+`).join('');
 
     const html = `<!DOCTYPE html>
 <html>
