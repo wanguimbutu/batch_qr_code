@@ -9,6 +9,7 @@ from frappe.utils import today
 # ─────────────────────────────────────────────────────────────
 
 def generate_qr_codes_for_batch(doc, method=None):
+    """Fires on Batch.after_insert — only runs if batch_qty is already set."""
     try:
         qty = int(doc.batch_qty or 0)
     except (ValueError, TypeError):
@@ -24,6 +25,7 @@ def generate_qr_codes_for_batch(doc, method=None):
 
 
 def on_batch_update(doc, method=None):
+    """Fires on Batch.on_update — generates if qty set after insert."""
     if doc.get("qr_codes"):
         return
 
@@ -34,6 +36,60 @@ def on_batch_update(doc, method=None):
 
     if qty > 0:
         _create_qr_codes(doc, qty)
+
+
+def generate_qr_from_work_order(doc, method=None):
+    """
+    Fires on Work Order.on_submit.
+    Reads qty_to_manufacture and the batch linked to the
+    finished goods item, then generates QR codes for that batch.
+    """
+    # Work Order must have a batch set on the finished item
+    batch_no = doc.batch_no  # this is the FG batch on the Work Order
+
+    if not batch_no:
+        # Try to find batch from work order item rows if not on header
+        for item in doc.get("required_items", []):
+            if item.get("batch_no"):
+                batch_no = item.batch_no
+                break
+
+    if not batch_no:
+        frappe.msgprint(
+            "⚠ No Batch No found on this Work Order. QR codes were not generated.",
+            alert=True,
+            indicator="orange"
+        )
+        return
+
+    qty = int(doc.qty_to_manufacture or 0)
+
+    if qty <= 0:
+        frappe.msgprint(
+            "⚠ Qty to Manufacture is 0. QR codes were not generated.",
+            alert=True,
+            indicator="orange"
+        )
+        return
+
+    # Check if QR codes already exist for this batch
+    batch = frappe.get_doc("Batch", batch_no)
+    if batch.get("qr_codes"):
+        frappe.msgprint(
+            f"ℹ QR codes already exist for Batch {batch_no}.",
+            alert=True,
+            indicator="blue"
+        )
+        return
+
+    # Set batch_qty from Work Order qty if not already set
+    if not batch.batch_qty:
+        batch.batch_qty = qty
+        batch.save(ignore_permissions=True)
+        frappe.db.commit()
+        batch.reload()
+
+    _create_qr_codes(batch, qty)
 
 
 # ─────────────────────────────────────────────────────────────

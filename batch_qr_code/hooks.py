@@ -10,6 +10,9 @@ doc_events = {
     "Batch": {
         "after_insert": "batch_qr_code.utils.qr_generator.generate_qr_codes_for_batch",
         "on_update":    "batch_qr_code.utils.qr_generator.on_batch_update",
+    },
+    "Work Order": {
+        "on_submit": "batch_qr_code.utils.qr_generator.generate_qr_from_work_order",
     }
 }
 
