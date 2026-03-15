@@ -294,7 +294,7 @@ def _create_qr_codes(doc, qty):
 
         # ── Add details below the QR image ────────────────────
         qr_width, qr_height = qr_img.size
-        label_height = 130
+        label_height = 175
         final_img = Image.new("RGB", (qr_width, qr_height + label_height), "white")
         final_img.paste(qr_img, (0, 0))
 
@@ -324,25 +324,24 @@ def _create_qr_codes(doc, qty):
 
         # ── Detail lines ──────────────────────────────────────
         details = [
-            (company,                        font_bold,   "#333333"),
-            (f"{doc.item} — {item_name}",    font_normal, "#111111"),
-            (f"Batch: {batch_no}",           font_normal, "#111111"),
-            (f"Date: {prod_date}",           font_normal, "#555555"),
-            (f"Unit {unit} of {qty}",        font_bold,   "#111111"),
-            (qr_id,                          font_small,  "#aaaaaa"),
+            (company,                     font_bold,   "#333333"),
+            (item_name,                   font_normal, "#111111"),
+            (f"Batch: {batch_no}",        font_bold,   "#111111"),
+            (f"Date:  {prod_date}",       font_normal, "#555555"),
+            (f"Unit:  {unit} of {qty}",   font_bold,   "#111111"),
+            (f"ID:    {qr_id}",           font_small,  "#aaaaaa"),
         ]
 
         y = qr_height + 10
         padding_left = 6
 
         for text, font, color in details:
-            # Truncate if too wide
-            max_chars = 45
+            max_chars = 48
             display = text if len(text) <= max_chars else text[:max_chars - 3] + "..."
             draw.text((padding_left, y), display, fill=color, font=font)
             bbox = draw.textbbox((0, 0), display, font=font)
             line_h = bbox[3] - bbox[1]
-            y += line_h + 3
+            y += line_h + 5
 
         # ── Save final image to bytes ─────────────────────────
         buf = io.BytesIO()
