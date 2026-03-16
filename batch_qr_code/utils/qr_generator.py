@@ -23,9 +23,8 @@ def _is_item_excluded(item_code):
     item_group = frappe.db.get_value("Item", item_code, "item_group")
     if not item_group:
         return False
-    # Also check parent groups up the tree
     group = item_group
-    for _ in range(5):  # max 5 levels up
+    for _ in range(5):
         if group in EXCLUDED_ITEM_GROUPS:
             return True
         parent = frappe.db.get_value("Item Group", group, "parent_item_group")
@@ -300,36 +299,47 @@ def _create_qr_codes(doc, qty):
 
         draw = ImageDraw.Draw(final_img)
 
-        # Load fonts
+        # ── Load fonts ────────────────────────────────────────
         try:
-            font_bold   = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 15)
-            font_normal = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
-            font_small  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11)
+            font_bold   = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 15
+            )
+            font_normal = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13
+            )
+            font_small  = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11
+            )
         except Exception:
             try:
-                font_bold   = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 15)
-                font_normal = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 13)
-                font_small  = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 11)
+                font_bold   = ImageFont.truetype(
+                    "/System/Library/Fonts/Helvetica.ttc", 15
+                )
+                font_normal = ImageFont.truetype(
+                    "/System/Library/Fonts/Helvetica.ttc", 13
+                )
+                font_small  = ImageFont.truetype(
+                    "/System/Library/Fonts/Helvetica.ttc", 11
+                )
             except Exception:
                 font_bold   = ImageFont.load_default()
                 font_normal = ImageFont.load_default()
                 font_small  = ImageFont.load_default()
 
-        # ── Draw a thin separator line ────────────────────────
+        # ── Draw separator line ───────────────────────────────
         draw.line(
             [(4, qr_height + 4), (qr_width - 4, qr_height + 4)],
             fill="#cccccc",
             width=1
         )
 
-        # ── Detail lines ──────────────────────────────────────
+        # ── Detail lines (left-aligned) ───────────────────────
         details = [
-            (company,                     font_bold,   "#333333"),
-            (item_name,                   font_normal, "#111111"),
+            (item_name,                   font_bold,   "#111111"),
+            (f"Item:  {doc.item}",        font_normal, "#333333"),
             (f"Batch: {batch_no}",        font_bold,   "#111111"),
             (f"Date:  {prod_date}",       font_normal, "#555555"),
             (f"Unit:  {unit} of {qty}",   font_bold,   "#111111"),
-            (f"ID:    {qr_id}",           font_small,  "#aaaaaa"),
         ]
 
         y = qr_height + 10
@@ -375,7 +385,7 @@ def _create_qr_codes(doc, qty):
             "is_printed":      0,
         })
 
-        # ── Commit every 50 rows ──────────────────────────────
+        # ── Commit every 50 rows to avoid memory buildup ──────
         if unit % 50 == 0:
             for row in rows:
                 doc.append("qr_codes", row)
@@ -433,6 +443,7 @@ def get_qr_codes_for_batch(batch_no):
 def get_batch_for_work_order(wo_name, production_item):
     """Find the batch linked to a Work Order."""
 
+    # Try 1: reference_doctype / reference_name on Batch
     batch_no = frappe.db.get_value(
         "Batch",
         {
@@ -443,11 +454,13 @@ def get_batch_for_work_order(wo_name, production_item):
         "name"
     )
 
+    # Try 2: custom_work_order_batch on the Work Order
     if not batch_no:
         batch_no = frappe.db.get_value(
             "Work Order", wo_name, "custom_work_order_batch"
         )
 
+    # Try 3: most recent batch for this item
     if not batch_no:
         batch_no = frappe.db.get_value(
             "Batch",
@@ -481,6 +494,7 @@ def regenerate_qr_codes(batch_no):
                 f"Item group for {batch.item} is excluded from QR code generation."
             )
 
+        # ── Delete old File attachments ───────────────────────
         old_files = frappe.get_all(
             "File",
             filters={
@@ -493,11 +507,13 @@ def regenerate_qr_codes(batch_no):
         for f in old_files:
             frappe.delete_doc("File", f, ignore_permissions=True)
 
+        # ── Clear child table ─────────────────────────────────
         batch.set("qr_codes", [])
         batch.flags.ignore_validate_update_after_submit = True
         batch.save(ignore_permissions=True)
         frappe.db.commit()
 
+        # ── Get qty ───────────────────────────────────────────
         qty = int(batch.batch_qty or 0)
 
         if qty <= 0:
