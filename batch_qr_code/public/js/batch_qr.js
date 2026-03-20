@@ -3,15 +3,13 @@ frappe.ui.form.on('Batch', {
     refresh(frm) {
         if (frm.is_new()) return;
 
-        // ── Show QR code count status ──────────────────────────
         const qr_count = (frm.doc.qr_codes || []).length;
 
         if (qr_count > 0) {
             frm.dashboard.set_headline(
-                `✅ ${qr_count} QR code(s) generated for this batch`
+                ` ${qr_count} QR code(s) generated for this batch`
             );
 
-            // ── Print QR Codes button ──────────────────────────
             frm.add_custom_button(__('🖨 Print QR Codes'), () => {
                 print_qr_codes(frm);
             }).css({
@@ -23,11 +21,10 @@ frappe.ui.form.on('Batch', {
 
         } else {
             frm.dashboard.set_headline(
-                `⚠ No QR codes found — click Generate to create them`
+                `⚠ No QR codes found — click Regenerate to create them`
             );
         }
 
-        // ── Regenerate button (always visible) ────────────────
         frm.add_custom_button(__('🔄 Regenerate QR Codes'), () => {
             frappe.confirm(
                 __('This will delete all existing QR codes and regenerate. Continue?'),
@@ -39,10 +36,17 @@ frappe.ui.form.on('Batch', {
                         freeze_message: __('Generating QR codes...'),
                         callback(r) {
                             if (r.message) {
-                                frappe.show_alert({
-                                    message: __(`✅ ${r.message.generated} QR code(s) generated`),
-                                    indicator: 'green'
-                                });
+                                if (r.message.status === 'queued') {
+                                    frappe.show_alert({
+                                        message: __(r.message.message),
+                                        indicator: 'blue'
+                                    });
+                                } else {
+                                    frappe.show_alert({
+                                        message: __(`✅ ${r.message.generated} QR code(s) generated`),
+                                        indicator: 'green'
+                                    });
+                                }
                                 frm.reload_doc();
                             }
                         }
@@ -55,8 +59,6 @@ frappe.ui.form.on('Batch', {
 
 });
 
-
-// ── Print function ─────────────────────────────────────────────
 
 function print_qr_codes(frm) {
     frappe.call({
@@ -75,9 +77,8 @@ function print_qr_codes(frm) {
             }
 
             const company = frappe.boot.sysdefaults.company || '';
-            open_print_window(r.message, company, frm.doc.name);
+            open_print_window(r.message, company, frm.doc.name, frm.doc.name, false);
 
-            // Mark all as printed
             frappe.call({
                 method: 'batch_qr_code.utils.qr_generator.mark_as_printed',
                 args: { batch_no: frm.doc.name }
@@ -87,19 +88,23 @@ function print_qr_codes(frm) {
 }
 
 
-// ── Build print window ─────────────────────────────────────────
 
-function open_print_window(qr_codes, company, batch_no) {
+function open_print_window(qr_codes, company, batch_no, ref_name, auto_print) {
 
-    const labels_html = qr_codes.map(qr => `
-    <div class="qr-label">
-        <img
-            src="${qr.qr_image}"
-            alt="${escHtml(qr.qr_code_id)}"
-            onerror="this.style.display='none'"
-        />
-    </div>
-`).join('');
+    const labels_html = qr_codes.map((qr, idx) => `
+        <div class="qr-label" id="label-${idx}">
+            <img
+                src="${escHtml(qr.qr_image)}"
+                alt="${escHtml(qr.qr_code_id)}"
+                onerror="this.style.display='none'"
+            />
+            <div class="label-actions no-print">
+                <button class="btn-single-print" onclick="printSingle(${idx})">
+                    🖨 Print this label
+                </button>
+            </div>
+        </div>
+    `).join('');
 
     const html = `<!DOCTYPE html>
 <html>
@@ -115,57 +120,56 @@ function open_print_window(qr_codes, company, batch_no) {
     padding: 20px;
   }
 
-  /* ── Screen toolbar ── */
   .toolbar {
     background: #fff;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
-    padding: 16px 20px;
+    padding: 14px 20px;
     margin-bottom: 20px;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
   }
-  .toolbar-left h2 {
-    font-size: 16px;
-    color: #111827;
-    margin-bottom: 2px;
+  .toolbar-left h2 { font-size: 16px; color: #111827; margin-bottom: 2px; }
+  .toolbar-left p  { font-size: 12px; color: #6b7280; }
+  .toolbar-right   { display: flex; gap: 8px; align-items: center; }
+
+  .btn-print-all {
+    padding: 8px 18px; font-size: 13px; font-weight: bold;
+    background: #5e64ff; color: #fff; border: none;
+    border-radius: 5px; cursor: pointer;
   }
-  .toolbar-left p {
-    font-size: 12px;
-    color: #6b7280;
-  }
-  .toolbar-right {
-    display: flex;
-    gap: 8px;
-  }
-  .btn-print {
-    padding: 9px 22px;
-    font-size: 14px;
-    font-weight: bold;
-    background: #5e64ff;
-    color: #fff;
-    border: none;
-    border-radius: 5px;
-    cursor: pointer;
-  }
-  .btn-print:hover { background: #4a50e0; }
+  .btn-print-all:hover { background: #4a50e0; }
+
   .btn-close {
-    padding: 9px 22px;
-    font-size: 14px;
-    background: #fff;
-    color: #374151;
-    border: 1px solid #d1d5db;
-    border-radius: 5px;
-    cursor: pointer;
+    padding: 8px 18px; font-size: 13px;
+    background: #fff; color: #374151;
+    border: 1px solid #d1d5db; border-radius: 5px; cursor: pointer;
   }
   .btn-close:hover { background: #f9fafb; }
 
-  /* ── Label grid ── */
+  .size-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #374151;
+  }
+  .size-selector select {
+    padding: 6px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 5px;
+    font-size: 13px;
+    background: #fff;
+    cursor: pointer;
+  }
+
   .qr-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 16px;
     justify-content: flex-start;
   }
 
@@ -173,100 +177,129 @@ function open_print_window(qr_codes, company, batch_no) {
     background: #fff;
     border: 1px solid #d1d5db;
     border-radius: 8px;
-    padding: 12px 10px 10px;
-    width: 185px;
-    text-align: center;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
     page-break-inside: avoid;
     break-inside: avoid;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-  }
-
-  .label-company {
-    font-size: 8px;
-    font-weight: bold;
-    text-transform: uppercase;
-    color: #5e64ff;
-    letter-spacing: 0.6px;
-    margin-bottom: 8px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .qr-label img {
-    width: 140px;
+    width: 100%;
     height: auto;
     display: block;
-    margin: 0 auto 8px;
-    border: 1px solid #f3f4f6;
-    border-radius: 4px;
   }
 
-  .label-body {
-    text-align: left;
-    font-size: 9px;
-    line-height: 1.7;
-    border-top: 1px solid #e5e7eb;
-    padding-top: 6px;
-    margin-top: 2px;
+  .label-actions { width: 100%; }
+
+  .btn-single-print {
+    width: 100%;
+    padding: 6px;
+    font-size: 12px;
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #e5e7eb;
+    border-radius: 5px;
+    cursor: pointer;
+    text-align: center;
+  }
+  .btn-single-print:hover {
+    background: #5e64ff;
+    color: #fff;
+    border-color: #5e64ff;
   }
 
-  .label-row {
-    display: flex;
-    gap: 5px;
-  }
-  .lbl {
-    font-weight: bold;
-    color: #9ca3af;
-    min-width: 34px;
-    flex-shrink: 0;
-  }
-  .val {
-    color: #111827;
-    word-break: break-all;
-  }
+  .size-small  .qr-label { width: 80mm;  }
+  .size-medium .qr-label { width: 100mm; }
+  .size-large  .qr-label { width: 120mm; }
 
-  .label-id {
-    font-size: 7px;
-    color: #d1d5db;
-    margin-top: 6px;
-    font-family: monospace;
-    letter-spacing: 0.3px;
-  }
+  .printing-single .qr-label          { display: none !important; }
+  .printing-single .qr-label.printing { display: flex !important; }
 
-  /* ── Print styles ── */
   @media print {
-    body { background: #fff; padding: 5mm; }
+    body { background: #fff; padding: 0; }
     .toolbar { display: none; }
-    .qr-grid { gap: 5mm; }
+    .no-print { display: none !important; }
+    .qr-grid { gap: 0; }
+
     .qr-label {
-      border: 0.5px solid #ccc;
-      border-radius: 4px;
-      width: 46mm;
-      padding: 3mm;
-      box-shadow: none;
+      border: none;
+      border-radius: 0;
+      padding: 4mm;
+      page-break-inside: avoid;
+      break-inside: avoid;
     }
-    .qr-label img { width: 35mm; }
-    @page { margin: 8mm; size: A4; }
+
+    .printing-single .qr-label.printing {
+      width: 100% !important;
+      padding: 8mm;
+    }
+    .printing-single .qr-label.printing img {
+      width: 100%;
+      max-width: 120mm;
+      margin: 0 auto;
+      display: block;
+    }
+
+    @page { margin: 5mm; size: auto; }
   }
 </style>
 </head>
 <body>
 
-<div class="toolbar">
+<div class="toolbar no-print">
   <div class="toolbar-left">
     <h2>QR Labels — Batch ${escHtml(batch_no)}</h2>
-    <p>${qr_codes.length} label(s) ready to print</p>
+    <p>${qr_codes.length} label(s) &nbsp;|&nbsp; Click a label to print individually</p>
   </div>
   <div class="toolbar-right">
-    <button class="btn-print" onclick="window.print()">🖨 Print</button>
+    <div class="size-selector">
+      <span>Sticker size:</span>
+      <select onchange="changeSize(this.value)">
+        <option value="small">Small (80mm)</option>
+        <option value="medium" selected>Medium (100mm)</option>
+        <option value="large">Large (120mm)</option>
+      </select>
+    </div>
+    <button class="btn-print-all" onclick="printAll()">🖨 Print All</button>
     <button class="btn-close" onclick="window.close()">✕ Close</button>
   </div>
 </div>
 
-<div class="qr-grid">
+<div class="qr-grid size-medium" id="qr-grid">
   ${labels_html}
 </div>
+
+<script>
+  function changeSize(size) {
+    document.getElementById('qr-grid').className = 'qr-grid size-' + size;
+  }
+
+  function printSingle(idx) {
+    var grid  = document.getElementById('qr-grid');
+    var label = document.getElementById('label-' + idx);
+    grid.classList.add('printing-single');
+    label.classList.add('printing');
+    window.print();
+    setTimeout(function() {
+      grid.classList.remove('printing-single');
+      label.classList.remove('printing');
+    }, 1000);
+  }
+
+  function printAll() {
+    var grid = document.getElementById('qr-grid');
+    grid.classList.remove('printing-single');
+    document.querySelectorAll('.qr-label').forEach(function(l) {
+      l.classList.remove('printing');
+    });
+    window.print();
+  }
+
+  ${auto_print ? 'window.onload = function() { setTimeout(printAll, 600); };' : ''}
+<\/script>
 
 </body>
 </html>`;
