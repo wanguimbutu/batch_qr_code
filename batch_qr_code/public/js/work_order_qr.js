@@ -281,6 +281,8 @@ function open_print_window(qr_codes, company, batch_no, wo_name, auto_print) {
       padding: 4mm;
       page-break-inside: avoid;
       break-inside: avoid;
+      page-break-after: always;
+      break-after: page;
     }
 
     .printing-single .qr-label.printing {
