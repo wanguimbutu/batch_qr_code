@@ -222,16 +222,18 @@ function open_print_window(qr_codes, company, batch_no, ref_name, auto_print) {
     body { background: #fff; padding: 0; }
     .toolbar { display: none; }
     .no-print { display: none !important; }
-    .qr-grid { gap: 0; }
+    .qr-grid { display: block; }
 
     .qr-label {
+      display: block;
+      width: 100% !important;
       border: none;
       border-radius: 0;
       padding: 4mm;
-      page-break-inside: avoid;
-      break-inside: avoid;
       page-break-after: always;
       break-after: page;
+      page-break-inside: avoid;
+      break-inside: avoid;
     }
 
     .printing-single .qr-label.printing {
