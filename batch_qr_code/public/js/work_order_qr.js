@@ -144,15 +144,21 @@ function open_print_window(qr_codes, company, batch_no, wo_name, auto_print) {
 
     const labels_html = qr_codes.map((qr, idx) => `
         <div class="qr-label" id="label-${idx}">
-            <img
-                src="${escHtml(qr.qr_image)}"
-                alt="${escHtml(qr.qr_code_id)}"
-                onerror="this.style.display='none'"
-            />
+            <div class="qr-side">
+                <img
+                    src="${escHtml(qr.qr_image)}"
+                    alt="${escHtml(qr.qr_code_id)}"
+                    onerror="this.style.display='none'"
+                />
+            </div>
+            <div class="detail-side">
+                <div class="detail-item-name">${escHtml(qr.item_name || qr.item_code)}</div>
+                <div class="detail-row"><span class="detail-label">Batch:</span> ${escHtml(qr.batch_no)}</div>
+                <div class="detail-row"><span class="detail-label">Unit:</span> ${escHtml(String(qr.unit_number))} / ${escHtml(String(qr.total_qty))}</div>
+                <div class="detail-row"><span class="detail-label">Date:</span> ${escHtml(qr.production_date)}</div>
+            </div>
             <div class="label-actions no-print">
-                <button class="btn-single-print" onclick="printSingle(${idx})">
-                    🖨 Print this label
-                </button>
+                <button class="btn-single-print" onclick="printSingle(${idx})">🖨</button>
             </div>
         </div>
     `).join('');
@@ -220,41 +226,85 @@ function open_print_window(qr_codes, company, batch_no, wo_name, auto_print) {
   .qr-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
+    gap: 12px;
     justify-content: flex-start;
   }
 
   .qr-label {
     background: #fff;
     border: 1px solid #d1d5db;
-    border-radius: 8px;
-    padding: 10px;
+    border-radius: 6px;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    page-break-inside: avoid;
-    break-inside: avoid;
+    flex-direction: row;
+    align-items: stretch;
+    width: 320px;
+    height: 160px;
+    overflow: hidden;
+    position: relative;
   }
 
-  .qr-label img {
+  .qr-side {
+    flex-shrink: 0;
+    width: 160px;
+    height: 160px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border-right: 1px solid #e5e7eb;
+  }
+
+  .qr-side img {
     width: 100%;
-    height: auto;
+    height: 100%;
+    object-fit: contain;
     display: block;
   }
 
-  .label-actions { width: 100%; }
+  .detail-side {
+    flex: 1;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    overflow: hidden;
+  }
+
+  .detail-item-name {
+    font-size: 12px;
+    font-weight: bold;
+    color: #111827;
+    line-height: 1.2;
+    margin-bottom: 4px;
+    word-break: break-word;
+  }
+
+  .detail-row {
+    font-size: 11px;
+    color: #374151;
+    line-height: 1.3;
+  }
+
+  .detail-label {
+    color: #6b7280;
+    font-size: 10px;
+  }
+
+  .label-actions {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+  }
 
   .btn-single-print {
-    width: 100%;
-    padding: 6px;
+    padding: 4px 8px;
     font-size: 12px;
     background: #f3f4f6;
     color: #374151;
     border: 1px solid #e5e7eb;
-    border-radius: 5px;
+    border-radius: 4px;
     cursor: pointer;
-    text-align: center;
   }
   .btn-single-print:hover {
     background: #5e64ff;
@@ -262,43 +312,61 @@ function open_print_window(qr_codes, company, batch_no, wo_name, auto_print) {
     border-color: #5e64ff;
   }
 
-  .size-small  .qr-label { width: 80mm;  }
-  .size-medium .qr-label { width: 100mm; }
-  .size-large  .qr-label { width: 120mm; }
-
   .printing-single .qr-label          { display: none !important; }
   .printing-single .qr-label.printing { display: flex !important; }
 
   @media print {
-    body { background: #fff; padding: 0; }
+    body { background: #fff; padding: 0; margin: 0; }
     .toolbar { display: none; }
     .no-print { display: none !important; }
     .qr-grid { display: block; }
 
     .qr-label {
-      display: block;
-      width: 100% !important;
+      display: flex;
+      flex-direction: row;
+      width: 2in;
+      height: 1in;
       border: none;
       border-radius: 0;
-      padding: 4mm;
       page-break-after: always;
       break-after: page;
       page-break-inside: avoid;
       break-inside: avoid;
+      overflow: hidden;
     }
 
-    .printing-single .qr-label.printing {
-      width: 100% !important;
-      padding: 8mm;
-    }
-    .printing-single .qr-label.printing img {
-      width: 100%;
-      max-width: 120mm;
-      margin: 0 auto;
-      display: block;
+    .qr-side {
+      width: 1in;
+      height: 1in;
+      border-right: none;
     }
 
-    @page { margin: 5mm; size: auto; }
+    .qr-side img {
+      width: 1in;
+      height: 1in;
+      object-fit: contain;
+    }
+
+    .detail-side {
+      width: 1in;
+      padding: 2mm 3mm;
+      gap: 1mm;
+    }
+
+    .detail-item-name {
+      font-size: 6.5pt;
+      margin-bottom: 1mm;
+    }
+
+    .detail-row {
+      font-size: 6pt;
+    }
+
+    .detail-label {
+      font-size: 5.5pt;
+    }
+
+    @page { size: 2in 1in; margin: 0; }
   }
 </style>
 </head>
@@ -311,12 +379,7 @@ function open_print_window(qr_codes, company, batch_no, wo_name, auto_print) {
   </div>
   <div class="toolbar-right">
     <div class="size-selector">
-      <span>Sticker size:</span>
-      <select onchange="changeSize(this.value)">
-        <option value="small">Small (80mm)</option>
-        <option value="medium" selected>Medium (100mm)</option>
-        <option value="large">Large (120mm)</option>
-      </select>
+      <span style="font-size:12px;color:#6b7280;">Sticker: 2in × 1in</span>
     </div>
     <button class="btn-print-all" onclick="printAll()">🖨 Print All</button>
     <button class="btn-close" onclick="window.close()">✕ Close</button>
@@ -328,10 +391,6 @@ function open_print_window(qr_codes, company, batch_no, wo_name, auto_print) {
 </div>
 
 <script>
-  function changeSize(size) {
-    document.getElementById('qr-grid').className = 'qr-grid size-' + size;
-  }
-
   function printSingle(idx) {
     var grid  = document.getElementById('qr-grid');
     var label = document.getElementById('label-' + idx);
