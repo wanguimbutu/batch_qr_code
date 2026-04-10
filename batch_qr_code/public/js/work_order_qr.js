@@ -277,7 +277,7 @@ function open_print_window(qr_codes, company, batch_no, wo_name, auto_print) {
     font-weight: bold;
     color: #111827;
     line-height: 1.2;
-    margin-bottom: 3px;
+    margin-bottom: 0;
     word-break: break-word;
   }
 
@@ -359,7 +359,7 @@ function open_print_window(qr_codes, company, batch_no, wo_name, auto_print) {
 
     .detail-item-name {
       font-size: 6pt;
-      margin-bottom: 1mm;
+      margin-bottom: 0;
     }
 
     .detail-row {
