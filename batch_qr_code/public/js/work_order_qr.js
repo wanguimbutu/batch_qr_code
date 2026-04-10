@@ -153,6 +153,7 @@ function open_print_window(qr_codes, company, batch_no, wo_name, auto_print) {
             </div>
             <div class="detail-side">
                 <div class="detail-item-name">${escHtml(qr.item_name || qr.item_code)}</div>
+                <div class="detail-row"><span class="detail-label">Item:</span> ${escHtml(qr.item_code)}</div>
                 <div class="detail-row"><span class="detail-label">Batch:</span> ${escHtml(qr.batch_no)}</div>
                 <div class="detail-row"><span class="detail-label">Unit:</span> ${escHtml(String(qr.unit_number))} / ${escHtml(String(qr.total_qty))}</div>
                 <div class="detail-row"><span class="detail-label">Date:</span> ${escHtml(qr.production_date)}</div>
@@ -263,32 +264,34 @@ function open_print_window(qr_codes, company, batch_no, wo_name, auto_print) {
 
   .detail-side {
     flex: 1;
-    padding: 10px 12px;
+    padding: 6px 10px 4px 10px;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    gap: 4px;
+    justify-content: flex-start;
+    gap: 2px;
     overflow: hidden;
   }
 
   .detail-item-name {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: bold;
     color: #111827;
     line-height: 1.2;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
     word-break: break-word;
   }
 
   .detail-row {
-    font-size: 11px;
-    color: #374151;
+    font-size: 10px;
+    font-weight: bold;
+    color: #111827;
     line-height: 1.3;
   }
 
   .detail-label {
-    color: #6b7280;
+    color: #374151;
     font-size: 10px;
+    font-weight: bold;
   }
 
   .label-actions {
@@ -349,21 +352,24 @@ function open_print_window(qr_codes, company, batch_no, wo_name, auto_print) {
 
     .detail-side {
       width: 1in;
-      padding: 2mm 3mm;
-      gap: 1mm;
+      padding: 1.5mm 2.5mm 1mm 2.5mm;
+      gap: 0.5mm;
+      justify-content: flex-start;
     }
 
     .detail-item-name {
-      font-size: 6.5pt;
+      font-size: 6pt;
       margin-bottom: 1mm;
     }
 
     .detail-row {
-      font-size: 6pt;
+      font-size: 5.5pt;
+      font-weight: bold;
     }
 
     .detail-label {
       font-size: 5.5pt;
+      font-weight: bold;
     }
 
     @page { size: 2in 1in; margin: 0; }

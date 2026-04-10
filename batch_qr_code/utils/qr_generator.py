@@ -268,9 +268,7 @@ def _create_qr_codes(doc, qty):
         qr_id = _generate_unique_id(batch_no, unit)
 
         # ── Payload (what scanner reads) ──────────────────────
-        # Keep payload minimal so the QR matrix stays small and
-        # each module is physically larger when printed on a 1in square.
-        payload = f"{qr_id}|{batch_no}|{unit}/{qty}|{prod_date}"
+        payload = qr_id
 
         # ── Generate QR image ─────────────────────────────────
         # ERROR_CORRECT_M (15 % redundancy) produces a smaller matrix
