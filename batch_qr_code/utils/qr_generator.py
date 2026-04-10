@@ -252,8 +252,7 @@ def _create_qr_codes_background(batch_no, qty):
 
 def _create_qr_codes(doc, qty):
     import qrcode
-    from qrcode.constants import ERROR_CORRECT_H
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image
 
     company   = frappe.defaults.get_global_default("company") or ""
     item_doc  = frappe.get_doc("Item", doc.item)
@@ -269,89 +268,24 @@ def _create_qr_codes(doc, qty):
         qr_id = _generate_unique_id(batch_no, unit)
 
         # ── Payload (what scanner reads) ──────────────────────
-        payload = (
-            f"Company: {company}\n"
-            f"Item Code: {doc.item}\n"
-            f"Date of Production: {prod_date}\n"
-            f"Batch No: {batch_no}\n"
-            f"Unit: {unit} of {qty}\n"
-            f"ID: {qr_id}\n"
-            f"----------------------------------------\n"
-            f"ITEM: {item_name}"
-        )
+        # Keep payload minimal so the QR matrix stays small and
+        # each module is physically larger when printed on a 1in square.
+        payload = f"{qr_id}|{batch_no}|{unit}/{qty}|{prod_date}"
 
         # ── Generate QR image ─────────────────────────────────
+        # ERROR_CORRECT_M (15 % redundancy) produces a smaller matrix
+        # than H (30 %), making each module bigger and easier to scan
+        # at low print resolutions.
+        from qrcode.constants import ERROR_CORRECT_M
         qr = qrcode.QRCode(
             version=None,
-            error_correction=ERROR_CORRECT_H,
-            box_size=8,
-            border=2,
+            error_correction=ERROR_CORRECT_M,
+            box_size=14,
+            border=3,
         )
         qr.add_data(payload)
         qr.make(fit=True)
-        qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-
-        # ── Add details below the QR image ────────────────────
-        qr_width, qr_height = qr_img.size
-        label_height = 175
-        final_img = Image.new("RGB", (qr_width, qr_height + label_height), "white")
-        final_img.paste(qr_img, (0, 0))
-
-        draw = ImageDraw.Draw(final_img)
-
-        # ── Load fonts ────────────────────────────────────────
-        try:
-            font_bold   = ImageFont.truetype(
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 15
-            )
-            font_normal = ImageFont.truetype(
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13
-            )
-            font_small  = ImageFont.truetype(
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 11
-            )
-        except Exception:
-            try:
-                font_bold   = ImageFont.truetype(
-                    "/System/Library/Fonts/Helvetica.ttc", 15
-                )
-                font_normal = ImageFont.truetype(
-                    "/System/Library/Fonts/Helvetica.ttc", 13
-                )
-                font_small  = ImageFont.truetype(
-                    "/System/Library/Fonts/Helvetica.ttc", 11
-                )
-            except Exception:
-                font_bold   = ImageFont.load_default()
-                font_normal = ImageFont.load_default()
-                font_small  = ImageFont.load_default()
-
-        # ── Draw separator line ───────────────────────────────
-        draw.line(
-            [(4, qr_height + 4), (qr_width - 4, qr_height + 4)],
-            fill="#cccccc",
-            width=1
-        )
-
-        # ── Detail lines (left-aligned) ───────────────────────
-        details = [
-            (item_name,                   font_bold,   "#111111"),
-            (f"Item:  {doc.item}",        font_normal, "#333333"),
-            (f"Batch: {batch_no}",        font_bold,   "#111111"),
-            (f"Date:  {prod_date}",       font_normal, "#555555"),
-            (f"Unit:  {unit} of {qty}",   font_bold,   "#111111"),
-        ]
-
-        y = qr_height + 10
-        padding_left = 6
-
-        for text, font, color in details:
-            max_chars = 48
-            display = text if len(text) <= max_chars else text[:max_chars - 3] + "..."
-            draw.text((padding_left, y), display, fill=color, font=font)
-            bbox = draw.textbbox((0, 0), display, font=font)
-            line_h = bbox[3] - bbox[1]
-            y += line_h + 5
+        final_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
         # ── Save final image to bytes ─────────────────────────
         buf = io.BytesIO()
